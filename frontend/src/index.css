@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* PDF text layer highlight styles */
+.react-pdf__Page__textContent mark,
+.react-pdf__Page__textContent .highlight-box {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+  border: 2px solid #ef4444 !important;
+  border-radius: 3px !important;
+  padding: 2px 4px !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.6) !important;
+  color: inherit !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+/* Animation for highlight */
+@keyframes pulse-highlight {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.9);
+  }
+}
+
+.react-pdf__Page__textContent mark {
+  animation: pulse-highlight 1.5s ease-in-out infinite !important;
+}
