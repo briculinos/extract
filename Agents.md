@@ -19,9 +19,9 @@ This document provides comprehensive context for AI agents working on this codeb
 │                      FRONTEND (React + Vite)                        │
 │                      Port: 5173                                     │
 ├─────────────────┬─────────────────┬─────────────────────────────────┤
-│  /              │   /search       │   /insights                     │
-│  File Upload    │   Full-text     │   RAG Chat                      │
-│  URL Fetch      │   Search        │   with OpenAI                   │
+│  /              │   /results      │   /insights                     │
+│  1. Schema      │   Data Table    │   Chat with                     │
+│  2. File Upload │   + PDF Preview │   Document Context              │
 └────────┬────────┴────────┬────────┴────────────────┬────────────────┘
          │                 │                         │
          ▼                 ▼                         ▼
@@ -156,7 +156,7 @@ class ExtractionService:
 | `app/services/minio_service.py` | MinIO client wrapper (upload, download, presigned URLs) |
 | `app/services/extraction_service.py` | **Multi-provider extraction**: NuExtract API/Local + LlamaExtract fallback |
 | `app/services/embedding_service.py` | OpenAI embeddings + text chunking |
-| `app/services/chat_service.py` | RAG implementation: vector search + OpenAI chat |
+| `app/services/chat_service.py` | Chat with direct SQL query on extracted data + OpenAI (gpt-4o-mini) |
 | `app/workers/celery_app.py` | Celery configuration |
 | `app/workers/extraction_tasks.py` | Background task: `process_document_extraction` |
 
@@ -164,16 +164,22 @@ class ExtractionService:
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Main component with React Router (3 pages) |
+| `src/App.tsx` | Main component with React Router (3 pages: /, /results, /insights) |
 | `src/api/client.ts` | Axios API client with all endpoint functions |
-| `src/store/useStore.ts` | Zustand global state management |
+| `src/store/useStore.ts` | Zustand global state management with persistence |
 | `src/types/index.ts` | TypeScript interfaces |
-| `src/components/FileUpload.tsx` | Drag-drop zone + URL input |
+| `src/components/SchemaSelector.tsx` | Schema picker + custom schema creation with name/fields |
+| `src/components/FileUpload.tsx` | Drag-drop zone + "Browse Files" button + URL fetch |
+| `src/components/DocumentPreview.tsx` | Stacked document cards with PDF/image thumbnails |
+| `src/components/ResultsPage.tsx` | Extracted data table with inline PDF preview |
+| `src/components/InlinePDFPreview.tsx` | PDF viewer with field highlighting on hover |
+| `src/components/DocumentPreviewModal.tsx` | Full-screen document preview modal |
+| `src/components/InsightsChat.tsx` | Streaming chat + document list sidebar |
+| `src/components/PDFViewer.tsx` | React-PDF based viewer with zoom/navigation |
+| `src/components/ExportModal.tsx` | Export data to CSV/JSON |
 | `src/components/DocumentList.tsx` | Document listing with status indicators |
 | `src/components/ExtractedDataView.tsx` | Rendered extracted JSON data |
 | `src/components/SearchPanel.tsx` | Full-text search UI |
-| `src/components/InsightsChat.tsx` | Streaming chat interface |
-| `src/components/SchemaSelector.tsx` | Extraction schema picker |
 
 ---
 
@@ -309,7 +315,10 @@ class ProductPassport(BaseModel):
 ## Data Flow: Document Upload to Insights
 
 ```
-1. User uploads file via FileUpload.tsx
+1. User flow on upload page (/):
+   └─> Select or create extraction schema (SchemaSelector.tsx)
+   └─> Custom schemas: name + fields, saved to localStorage
+   └─> Upload files via drag-drop, "Browse Files", or URL fetch
    └─> POST /api/v1/documents/upload (multipart)
 
 2. Backend receives file
@@ -341,12 +350,11 @@ class ProductPassport(BaseModel):
    └─> Search via /search (SearchPanel.tsx)
    └─> Chat via /insights (InsightsChat.tsx)
 
-6. Chat/RAG flow:
+6. Chat flow (fast, direct SQL):
    └─> User asks question
-   └─> Backend embeds question via OpenAI
-   └─> pgvector finds similar chunks (cosine distance)
-   └─> Builds context from top chunks
-   └─> Calls OpenAI chat with context + question
+   └─> Backend queries ExtractedData table directly (no embeddings)
+   └─> Builds context from all extracted JSON data (limit 50)
+   └─> Calls OpenAI gpt-4o-mini with context + question
    └─> Streams response back to frontend
 ```
 
