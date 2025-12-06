@@ -270,7 +270,7 @@ export function ResultsPage() {
                 </div>
               </div>
             )}
-            <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="bg-white rounded-lg shadow-md">
               {isLoading ? (
                 <div className="p-8 text-center">
                   <Loader2 className="w-12 h-12 mx-auto mb-3 text-blue-500 animate-spin" />
@@ -283,8 +283,8 @@ export function ResultsPage() {
                   <p className="text-sm mt-1">Upload and process documents to see results</p>
                 </div>
               ) : (
-                <div className="overflow-auto max-h-[70vh]">
-                  <table className="min-w-max w-full">
+                <div className="overflow-x-auto overflow-y-auto max-h-[70vh]" style={{ scrollbarWidth: 'thin', scrollbarColor: '#c1c1c1 #f1f1f1' }}>
+                  <table className="w-full" style={{ minWidth: '1200px' }}>
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-gray-50 border-b border-gray-200">
                         {columns.map((col) => (

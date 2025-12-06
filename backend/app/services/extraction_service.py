@@ -452,7 +452,8 @@ class LlamaExtractProvider(ExtractionProvider):
 
     def _get_or_create_agent(self, schema_name: str, custom_fields: list[str] | None = None):
         # Version number - increment to force new agent creation when schema changes
-        AGENT_VERSION = "v3"
+        # v4: Added line_items nested array to Invoice schema
+        AGENT_VERSION = "v4"
 
         # Create a unique cache key for custom schemas
         if custom_fields and len(custom_fields) > 0:

@@ -156,7 +156,7 @@ class ExtractionService:
 | `app/services/minio_service.py` | MinIO client wrapper (upload, download, presigned URLs) |
 | `app/services/extraction_service.py` | **Multi-provider extraction**: NuExtract API/Local + LlamaExtract fallback |
 | `app/services/embedding_service.py` | OpenAI embeddings + text chunking |
-| `app/services/chat_service.py` | Chat with direct SQL query on extracted data + OpenAI (gpt-4o-mini) |
+| `app/services/chat_service.py` | **Smart Chat**: Query analyzer + JSONB line-item search + vector search + OpenAI (gpt-4o-mini) |
 | `app/workers/celery_app.py` | Celery configuration |
 | `app/workers/extraction_tasks.py` | Background task: `process_document_extraction` |
 
@@ -176,7 +176,8 @@ class ExtractionService:
 | `src/components/DocumentPreviewModal.tsx` | Full-screen document preview modal |
 | `src/components/InsightsChat.tsx` | Streaming chat + document list sidebar |
 | `src/components/PDFViewer.tsx` | React-PDF based viewer with zoom/navigation |
-| `src/components/ExportModal.tsx` | Export data to CSV/JSON |
+| `src/components/ExportModal.tsx` | Export data to XLS with line-item flattening option |
+| `src/components/ExpandableLineItems.tsx` | Expandable table for nested line items in invoices |
 | `src/components/DocumentList.tsx` | Document listing with status indicators |
 | `src/components/ExtractedDataView.tsx` | Rendered extracted JSON data |
 | `src/components/SearchPanel.tsx` | Full-text search UI |
@@ -350,11 +351,17 @@ class ProductPassport(BaseModel):
    └─> Search via /search (SearchPanel.tsx)
    └─> Chat via /insights (InsightsChat.tsx)
 
-6. Chat flow (fast, direct SQL):
+6. Smart Chat flow (intelligent search):
    └─> User asks question
-   └─> Backend queries ExtractedData table directly (no embeddings)
-   └─> Builds context from all extracted JSON data (limit 50)
-   └─> Calls OpenAI gpt-4o-mini with context + question
+   └─> Stage 1: Query Analyzer (LLM extracts search intent)
+       └─> Identifies: search_terms, search_fields, query_type, needs_line_items
+   └─> Stage 2: Smart Retrieval (routes to appropriate search)
+       ├─> Product lookups: JSONB line-item search with LATERAL join
+       ├─> Document queries: Field-specific search (seller, buyer, invoice_number)
+       └─> Semantic queries: pgvector similarity search (embeddings)
+   └─> Stage 3: Response Generation
+       └─> Only relevant context sent to LLM (not all documents)
+       └─> Improved prompt ensures accurate matching
    └─> Streams response back to frontend
 ```
 
@@ -511,6 +518,24 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ## Recent Updates (December 2024)
 
+### Smart Chat Agent
+- **Intelligent query routing**: Chat agent now analyzes user queries and routes to appropriate search method
+  - **Query Analyzer**: Uses LLM to extract search intent (search terms, fields, query type)
+  - **JSONB Line-Item Search**: Direct PostgreSQL search within `line_items` array using `LATERAL jsonb_array_elements`
+  - **Document Field Search**: Searches seller, buyer, invoice_number fields
+  - **Semantic Search**: Uses pgvector embeddings for general/vague queries
+  - **Improved Prompts**: Better system prompt ensures accurate product matching
+  - No more hardcoded 50 document limit - retrieves only relevant context
+  - Files: `chat_service.py` (complete rewrite)
+
+### Nested Line Items Support
+- **Invoice line items**: Extraction schemas now support nested arrays for line items
+  - `LineItem` model: product_name, description, sku, quantity, unit_price, total_price, vat_rate, vat_amount
+  - **ExpandableLineItems component**: Shows "N line items" button, expands to show full table
+  - **Export flattening**: Option to export one row per line item (document fields repeated)
+  - Horizontal scrolling table with proper overflow handling
+  - Files: `ExpandableLineItems.tsx`, `ResultsPage.tsx`, `ExportModal.tsx`, `extraction_service.py`
+
 ### Custom Schema Management
 - **Delete custom schemas**: Users can now delete custom schemas they no longer need
   - Trash icon appears next to custom schemas in the dropdown
@@ -529,21 +554,15 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ## Planned Features
 
-### Nested Fields / Line Items Support (In Development)
-**Goal**: Handle invoices with multiple line items (e.g., IKEA kitchen with 5000+ items)
+### Celery Tasks for Heavy Aggregations (Future)
+**Goal**: Handle heavy aggregation queries asynchronously for scalability
 
 **Approach**:
-1. **Backend**: Add `LineItem` Pydantic model with fields: `product_name`, `quantity`, `unit_price`, `total_price`, `vat_rate`, `sku`
-2. **Invoice Schema**: Add `line_items: Optional[list[LineItem]]` field
-3. **Custom Schemas**: Support syntax `line_items[].field_name` for nested arrays
-4. **UI Display**: Expandable rows - collapsed shows "N line items", expanded shows table
-5. **Export**: Flatten to one row per line item (document fields repeated)
+1. Create `backend/app/workers/chat_tasks.py` with Celery tasks
+2. Route heavy queries (e.g., "sum all invoices") to background tasks
+3. Return task ID for polling or use timeout-based waiting
 
-**Key files to modify**:
-- `backend/app/services/extraction_service.py` - LineItem model, update Invoice schema
-- `frontend/src/components/ExpandableLineItems.tsx` - New component
-- `frontend/src/components/ResultsPage.tsx` - Detect arrays, render expandable
-- `frontend/src/components/ExportModal.tsx` - Flatten line items
+**Use case**: When users ask questions like "What's the total spent across all invoices?", the aggregation could scan thousands of documents and should run in background
 
 ---
 
@@ -551,11 +570,10 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 1. **No authentication** - Add JWT/OAuth for production
 2. **No file validation** - Add virus scanning, size limits
-3. **Basic search** - Consider Elasticsearch for large-scale full-text search
-4. **No rate limiting** - Add for production API
-5. **NuExtract local model** - Requires GPU with sufficient VRAM for best performance
-6. **PDF text extraction** - Uses simple text extraction; complex layouts may need OCR
-7. **Flat schemas only** - Currently no support for nested/array fields (in development)
+3. **No rate limiting** - Add for production API
+4. **NuExtract local model** - Requires GPU with sufficient VRAM for best performance
+5. **PDF text extraction** - Uses simple text extraction; complex layouts may need OCR
+6. **Heavy aggregations** - Large-scale aggregations not yet backgrounded via Celery
 
 ---
 
@@ -567,7 +585,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 - **Multi-provider extraction**: `backend/app/services/extraction_service.py`
 - **Provider classes**: `extraction_service.py:110` (NuExtractAPIProvider), `:166` (NuExtractLocalProvider), `:268` (LlamaExtractProvider)
 - **Extraction schemas**: `extraction_service.py:32` (ProductPassport), `:63` (GenericDocument)
-- **Vector search**: `backend/app/services/chat_service.py:22`
+- **Smart Chat**: `backend/app/services/chat_service.py` (query analyzer, JSONB search, vector search)
 - **Frontend state**: `frontend/src/store/useStore.ts`
 - **API client**: `frontend/src/api/client.ts`
 - **Docker services**: `docker-compose.yml`
