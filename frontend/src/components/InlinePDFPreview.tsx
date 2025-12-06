@@ -11,15 +11,26 @@ interface InlinePDFPreviewProps {
   documentId: string | null;
   extractedData: ExtractedData | null;
   activeField: string | null;
+  filename?: string | null;
   width?: number;
+}
+
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.tif'];
+
+function isImageFile(filename: string | null | undefined): boolean {
+  if (!filename) return false;
+  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+  return IMAGE_EXTENSIONS.includes(ext);
 }
 
 export function InlinePDFPreview({
   documentId,
   extractedData,
   activeField,
+  filename,
   width = 350,
 }: InlinePDFPreviewProps) {
+  const isImage = isImageFile(filename);
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [numPages, setNumPages] = useState<number>(0);
@@ -147,6 +158,58 @@ export function InlinePDFPreview({
     );
   }
 
+  // Render image preview
+  if (isImage) {
+    return (
+      <div className="flex flex-col h-full bg-gray-100 rounded-lg overflow-hidden">
+        {/* Mini toolbar for images */}
+        <div className="flex items-center justify-end px-2 py-1 bg-white border-b text-xs">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setScale((s) => Math.max(0.3, s - 0.1))}
+              disabled={scale <= 0.3}
+              className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <span className="text-gray-600 w-10 text-center">{Math.round(scale * 100)}%</span>
+            <button
+              onClick={() => setScale((s) => Math.min(2.0, s + 0.1))}
+              disabled={scale >= 2.0}
+              className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            >
+              <ZoomIn size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Image content */}
+        <div className="flex-1 overflow-auto p-2 flex items-start justify-center">
+          {documentUrl && (
+            <img
+              src={documentUrl}
+              alt={filename || 'Document preview'}
+              style={{ width: `${(width - 20) * scale}px` }}
+              className="shadow-md rounded"
+              onError={() => setError('Failed to load image')}
+            />
+          )}
+        </div>
+
+        {/* Highlight info */}
+        {activeField && (
+          <div className="px-2 py-1 bg-blue-50 border-t border-blue-200">
+            <p className="text-xs text-blue-700 truncate">
+              <span className="font-medium">Field:</span>{' '}
+              {activeField.replace(/_/g, ' ')}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Render PDF preview
   return (
     <div className="flex flex-col h-full bg-gray-100 rounded-lg overflow-hidden">
       {/* Mini toolbar */}

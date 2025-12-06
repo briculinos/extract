@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Settings, Search, ChevronDown, Sparkles } from 'lucide-react';
+import { Settings, Search, ChevronDown, Sparkles, Trash2 } from 'lucide-react';
 import { getSchemas } from '../api/client';
 import { useStore } from '../store/useStore';
 import type { Schema } from '../types';
@@ -13,6 +13,7 @@ export function SchemaSelector() {
     customSchemaText,
     setCustomSchemaText,
     addCustomSchema,
+    deleteCustomSchema,
   } = useStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,29 +170,47 @@ export function SchemaSelector() {
                 </div>
               ) : (
                 filteredSchemas.map((schema) => (
-                  <button
+                  <div
                     key={schema.name}
-                    onClick={() => handleSelectSchema(schema.name)}
-                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center justify-between ${
+                    className={`flex items-center justify-between hover:bg-gray-50 ${
                       selectedSchema === schema.name ? 'bg-blue-50' : ''
                     }`}
                   >
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">
-                        {formatSchemaName(schema.name)}
-                      </p>
-                      {schema.description && (
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {schema.description}
+                    <button
+                      onClick={() => handleSelectSchema(schema.name)}
+                      className="flex-1 px-4 py-3 text-left flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">
+                          {formatSchemaName(schema.name)}
                         </p>
+                        {schema.description && (
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {schema.description}
+                          </p>
+                        )}
+                      </div>
+                      {schema.isCustom && (
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded">
+                          Custom
+                        </span>
                       )}
-                    </div>
+                    </button>
                     {schema.isCustom && (
-                      <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded">
-                        Custom
-                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete "${formatSchemaName(schema.name)}" schema?`)) {
+                            deleteCustomSchema(schema.name);
+                          }
+                        }}
+                        className="px-3 py-3 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Delete schema"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
-                  </button>
+                  </div>
                 ))
               )}
             </div>

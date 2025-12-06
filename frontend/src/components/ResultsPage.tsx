@@ -229,6 +229,11 @@ export function ResultsPage() {
                     documentId={previewDocument?.documentId || (completedFiles[0]?.documentId ?? null)}
                     extractedData={previewDocument?.extractedData || (allExtractedData[0] ?? null)}
                     activeField={activeHighlight?.fieldName || null}
+                    filename={
+                      previewDocument
+                        ? completedFiles.find((f) => f.documentId === previewDocument.documentId)?.filename
+                        : completedFiles[0]?.filename
+                    }
                   />
                 </div>
               </div>

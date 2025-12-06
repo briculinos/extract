@@ -43,6 +43,7 @@ interface AppState {
   schemas: Schema[];
   setSchemas: (schemas: Schema[]) => void;
   addCustomSchema: (schema: Schema) => void;
+  deleteCustomSchema: (schemaName: string) => void;
   selectedSchema: string;
   setSelectedSchema: (schema: string) => void;
   customSchemaText: string;
@@ -132,6 +133,11 @@ export const useStore = create<AppState>()(
       setSchemas: (schemas) => set({ schemas }),
       addCustomSchema: (schema) => set((state) => ({
         schemas: [...state.schemas, { ...schema, isCustom: true }]
+      })),
+      deleteCustomSchema: (schemaName) => set((state) => ({
+        schemas: state.schemas.filter(s => s.name !== schemaName),
+        // Reset to generic if the deleted schema was selected
+        selectedSchema: state.selectedSchema === schemaName ? 'generic' : state.selectedSchema
       })),
       selectedSchema: 'generic',
       setSelectedSchema: (schema) => set({ selectedSchema: schema }),

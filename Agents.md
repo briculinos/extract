@@ -509,6 +509,44 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ---
 
+## Recent Updates (December 2024)
+
+### Custom Schema Management
+- **Delete custom schemas**: Users can now delete custom schemas they no longer need
+  - Trash icon appears next to custom schemas in the dropdown
+  - Confirmation dialog before deletion
+  - If deleted schema was selected, falls back to 'generic'
+  - Files: `SchemaSelector.tsx`, `useStore.ts` (deleteCustomSchema action)
+
+### Image Preview Support
+- **InlinePDFPreview** now handles both PDFs and images (PNG, JPG, JPEG, GIF, WebP, BMP, TIFF)
+  - Auto-detects file type from filename extension
+  - Images render with `<img>` tag instead of react-pdf
+  - Zoom controls work for both PDFs and images
+  - Files: `InlinePDFPreview.tsx`, `ResultsPage.tsx` (passes filename prop)
+
+---
+
+## Planned Features
+
+### Nested Fields / Line Items Support (In Development)
+**Goal**: Handle invoices with multiple line items (e.g., IKEA kitchen with 5000+ items)
+
+**Approach**:
+1. **Backend**: Add `LineItem` Pydantic model with fields: `product_name`, `quantity`, `unit_price`, `total_price`, `vat_rate`, `sku`
+2. **Invoice Schema**: Add `line_items: Optional[list[LineItem]]` field
+3. **Custom Schemas**: Support syntax `line_items[].field_name` for nested arrays
+4. **UI Display**: Expandable rows - collapsed shows "N line items", expanded shows table
+5. **Export**: Flatten to one row per line item (document fields repeated)
+
+**Key files to modify**:
+- `backend/app/services/extraction_service.py` - LineItem model, update Invoice schema
+- `frontend/src/components/ExpandableLineItems.tsx` - New component
+- `frontend/src/components/ResultsPage.tsx` - Detect arrays, render expandable
+- `frontend/src/components/ExportModal.tsx` - Flatten line items
+
+---
+
 ## Known Limitations
 
 1. **No authentication** - Add JWT/OAuth for production
@@ -517,6 +555,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 4. **No rate limiting** - Add for production API
 5. **NuExtract local model** - Requires GPU with sufficient VRAM for best performance
 6. **PDF text extraction** - Uses simple text extraction; complex layouts may need OCR
+7. **Flat schemas only** - Currently no support for nested/array fields (in development)
 
 ---
 
