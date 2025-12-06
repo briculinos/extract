@@ -34,6 +34,7 @@ class SearchRequest(BaseModel):
 class ChatRequest(BaseModel):
     query: str
     chat_history: Optional[list[dict]] = None
+    document_ids: Optional[list[str]] = None  # Filter to only these documents
 
 
 # Response schemas

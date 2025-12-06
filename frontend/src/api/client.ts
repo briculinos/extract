@@ -73,14 +73,15 @@ export const chat = async (query: string, chatHistory: { role: string; content: 
 export const chatStream = async (
   query: string,
   chatHistory: { role: string; content: string }[] = [],
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  documentIds?: string[]  // Filter to only these documents
 ) => {
-  console.log('[chatStream] Sending request to /chat/stream');
+  console.log('[chatStream] Sending request to /chat/stream with', documentIds?.length || 0, 'documents');
 
   const response = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, chat_history: chatHistory }),
+    body: JSON.stringify({ query, chat_history: chatHistory, document_ids: documentIds }),
   });
 
   console.log('[chatStream] Response status:', response.status);

@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import logging
+import re
 
 from app.core.config import get_settings
 from app.models.document import Document, ExtractionJob, ExtractedData, DocumentChunk, JobStatus
@@ -12,6 +13,64 @@ from app.services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def parse_price(price_str: str | None) -> float | None:
+    """Parse a price string to float, handling various formats."""
+    if not price_str:
+        return None
+    try:
+        # Remove currency symbols and whitespace
+        cleaned = re.sub(r'[^\d,.\-]', '', str(price_str))
+        # Handle European format (1.234,56) vs US format (1,234.56)
+        if ',' in cleaned and '.' in cleaned:
+            if cleaned.rfind(',') > cleaned.rfind('.'):
+                # European: 1.234,56
+                cleaned = cleaned.replace('.', '').replace(',', '.')
+            else:
+                # US: 1,234.56
+                cleaned = cleaned.replace(',', '')
+        elif ',' in cleaned:
+            # Could be European decimal (123,45) or US thousands (1,234)
+            parts = cleaned.split(',')
+            if len(parts) == 2 and len(parts[1]) == 2:
+                # Likely European decimal
+                cleaned = cleaned.replace(',', '.')
+            else:
+                cleaned = cleaned.replace(',', '')
+        return float(cleaned) if cleaned else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def post_process_extraction(data: dict) -> dict:
+    """Post-process extracted data to fill in missing calculated fields."""
+    if not data:
+        return data
+
+    # Calculate total from line items if missing
+    line_items = data.get('line_items', [])
+    if line_items and isinstance(line_items, list):
+        # Calculate subtotal from line items if missing
+        if not data.get('total') or data.get('total') in [None, '', '-']:
+            total = 0.0
+            currency = data.get('currency', '')
+            for item in line_items:
+                if isinstance(item, dict):
+                    price = parse_price(item.get('total_price'))
+                    if price:
+                        total += price
+            if total > 0:
+                # Format with 2 decimal places
+                data['total'] = f"{total:.2f}"
+                logger.info(f"Calculated total from line items: {data['total']} {currency}")
+
+        # Also calculate subtotal if missing (same as total for now, could subtract VAT later)
+        if not data.get('subtotal') or data.get('subtotal') in [None, '', '-']:
+            if data.get('total'):
+                data['subtotal'] = data['total']
+
+    return data
 
 # Sync engine for Celery workers
 sync_database_url = settings.database_url.replace("+asyncpg", "")
@@ -73,6 +132,9 @@ def process_document_extraction(self, job_id: str, document_id: str, schema_name
             )
         finally:
             loop.close()
+
+        # Post-process: fill in missing calculated fields (e.g., total from line items)
+        extraction_result["data"] = post_process_extraction(extraction_result["data"])
 
         # Store extracted data
         extracted = ExtractedData(

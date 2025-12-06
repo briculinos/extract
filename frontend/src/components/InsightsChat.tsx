@@ -116,6 +116,11 @@ export function InsightsChat() {
     try {
       addChatMessage({ role: 'assistant', content: '' });
 
+      // Get document IDs from completed uploaded files
+      const documentIds = uploadedFiles
+        .filter((f) => f.status === 'completed' && f.documentId)
+        .map((f) => f.documentId!);
+
       let fullResponse = '';
       await chatStream(
         userMessage,
@@ -130,7 +135,8 @@ export function InsightsChat() {
             };
             return { chatMessages: messages };
           });
-        }
+        },
+        documentIds.length > 0 ? documentIds : undefined
       );
 
       // Update thread title with first question if it's a new thread

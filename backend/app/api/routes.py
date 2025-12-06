@@ -276,7 +276,7 @@ async def chat_insights(
     db: AsyncSession = Depends(get_db),
 ):
     """Chat with the document database for insights."""
-    response = await chat_service.chat(db, request.query, request.chat_history)
+    response = await chat_service.chat(db, request.query, request.chat_history, request.document_ids)
     return ChatResponse(response=response)
 
 
@@ -287,7 +287,7 @@ async def chat_insights_stream(
 ):
     """Stream chat responses for better UX."""
     async def generate():
-        async for chunk in chat_service.chat_stream(db, request.query, request.chat_history):
+        async for chunk in chat_service.chat_stream(db, request.query, request.chat_history, request.document_ids):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/plain")

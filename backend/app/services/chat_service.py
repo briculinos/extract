@@ -102,13 +102,14 @@ Return ONLY valid JSON, no other text."""
         self,
         db: AsyncSession,
         search_terms: list[str],
-        limit: int = 100
+        limit: int = 100,
+        document_ids: list[str] = None
     ) -> list[dict]:
         """Search within line_items JSON array using PostgreSQL JSONB."""
         if not search_terms:
             return []
 
-        logger.info(f"[CHAT] Searching line items for: {search_terms}")
+        logger.info(f"[CHAT] Searching line items for: {search_terms} (filtered to {len(document_ids) if document_ids else 'all'} docs)")
         start = time.time()
 
         # Build OR conditions for each search term
@@ -120,6 +121,12 @@ Return ONLY valid JSON, no other text."""
             like_conditions.append(f"LOWER(li.value->>'sku') LIKE '%{term_lower}%'")
 
         where_clause = " OR ".join(like_conditions)
+
+        # Add document_ids filter if provided
+        doc_filter = ""
+        if document_ids:
+            doc_ids_str = ",".join(f"'{doc_id}'" for doc_id in document_ids)
+            doc_filter = f"AND ed.document_id IN ({doc_ids_str})"
 
         # Use raw SQL for JSONB array search with LATERAL join
         # Note: data column is JSON (not JSONB), so cast it
@@ -141,7 +148,7 @@ Return ONLY valid JSON, no other text."""
                     ELSE '[]'::jsonb
                 END
             ) AS li(value)
-            WHERE {where_clause}
+            WHERE ({where_clause}) {doc_filter}
             LIMIT {limit}
         """)
 
@@ -180,14 +187,15 @@ Return ONLY valid JSON, no other text."""
         db: AsyncSession,
         search_terms: list[str],
         search_fields: list[str],
-        limit: int = 50
+        limit: int = 50,
+        document_ids: list[str] = None
     ) -> list[dict]:
         """Search document-level fields (seller, buyer, etc.)."""
         if not search_terms:
             # Return recent documents if no search terms
-            return await self.get_recent_documents(db, limit=limit)
+            return await self.get_recent_documents(db, limit=limit, document_ids=document_ids)
 
-        logger.info(f"[CHAT] Searching documents for: {search_terms} in fields: {search_fields}")
+        logger.info(f"[CHAT] Searching documents for: {search_terms} in fields: {search_fields} (filtered to {len(document_ids) if document_ids else 'all'} docs)")
         start = time.time()
 
         # Build dynamic JSONB search conditions
@@ -198,6 +206,12 @@ Return ONLY valid JSON, no other text."""
 
         where_clause = " OR ".join(conditions) if conditions else "1=1"
 
+        # Add document_ids filter if provided
+        doc_filter = ""
+        if document_ids:
+            doc_ids_str = ",".join(f"'{doc_id}'" for doc_id in document_ids)
+            doc_filter = f"AND ed.document_id IN ({doc_ids_str})"
+
         query = text(f"""
             SELECT
                 ed.id as extracted_id,
@@ -207,7 +221,7 @@ Return ONLY valid JSON, no other text."""
                 d.original_filename
             FROM extracted_data ed
             JOIN documents d ON ed.document_id = d.id
-            WHERE {where_clause}
+            WHERE ({where_clause}) {doc_filter}
             ORDER BY ed.created_at DESC
             LIMIT :limit
         """)
@@ -238,10 +252,11 @@ Return ONLY valid JSON, no other text."""
         self,
         db: AsyncSession,
         query: str,
-        limit: int = 10
+        limit: int = 10,
+        document_ids: list[str] = None
     ) -> list[dict]:
         """Use pgvector for semantic similarity search."""
-        logger.info(f"[CHAT] Semantic search for: {query[:50]}...")
+        logger.info(f"[CHAT] Semantic search for: {query[:50]}... (filtered to {len(document_ids) if document_ids else 'all'} docs)")
         start = time.time()
 
         try:
@@ -250,6 +265,12 @@ Return ONLY valid JSON, no other text."""
 
             # Convert embedding list to PostgreSQL array format
             embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
+            # Add document_ids filter if provided
+            doc_filter = ""
+            if document_ids:
+                doc_ids_str = ",".join(f"'{doc_id}'" for doc_id in document_ids)
+                doc_filter = f"WHERE dc.document_id IN ({doc_ids_str})"
 
             # pgvector cosine similarity search
             vector_query = text(f"""
@@ -262,6 +283,7 @@ Return ONLY valid JSON, no other text."""
                     1 - (dc.embedding <=> '{embedding_str}'::vector) as similarity
                 FROM document_chunks dc
                 JOIN documents d ON dc.document_id = d.id
+                {doc_filter}
                 ORDER BY dc.embedding <=> '{embedding_str}'::vector
                 LIMIT {limit}
             """)
@@ -290,17 +312,21 @@ Return ONLY valid JSON, no other text."""
     async def get_recent_documents(
         self,
         db: AsyncSession,
-        limit: int = 20
+        limit: int = 20,
+        document_ids: list[str] = None
     ) -> list[dict]:
         """Get recent extracted documents for general queries."""
-        logger.info(f"[CHAT] Getting {limit} recent documents")
+        logger.info(f"[CHAT] Getting {limit} recent documents (filtered to {len(document_ids) if document_ids else 'all'} docs)")
 
-        result = await db.execute(
-            select(ExtractedData, Document)
-            .join(Document, ExtractedData.document_id == Document.id)
-            .order_by(ExtractedData.created_at.desc())
-            .limit(limit)
-        )
+        query = select(ExtractedData, Document).join(Document, ExtractedData.document_id == Document.id)
+
+        # Filter by document_ids if provided
+        if document_ids:
+            query = query.where(ExtractedData.document_id.in_(document_ids))
+
+        query = query.order_by(ExtractedData.created_at.desc()).limit(limit)
+
+        result = await db.execute(query)
         rows = result.all()
 
         return [
@@ -317,7 +343,8 @@ Return ONLY valid JSON, no other text."""
     async def smart_search(
         self,
         db: AsyncSession,
-        analysis: dict
+        analysis: dict,
+        document_ids: list[str] = None
     ) -> dict:
         """Route to appropriate search based on query analysis."""
         query_type = analysis.get("query_type", "general")
@@ -326,7 +353,7 @@ Return ONLY valid JSON, no other text."""
         needs_line_items = analysis.get("needs_line_items", False)
         original_query = analysis.get("original_query", "")
 
-        logger.info(f"[CHAT] Smart search - type: {query_type}, needs_line_items: {needs_line_items}")
+        logger.info(f"[CHAT] Smart search - type: {query_type}, needs_line_items: {needs_line_items}, doc_filter: {len(document_ids) if document_ids else 'none'}")
 
         results = {
             "line_items": [],
@@ -337,21 +364,21 @@ Return ONLY valid JSON, no other text."""
 
         # Product lookups need line-item level search
         if needs_line_items and search_terms:
-            results["line_items"] = await self.search_line_items(db, search_terms)
+            results["line_items"] = await self.search_line_items(db, search_terms, document_ids=document_ids)
 
         # Also search document-level fields if specified
         if search_fields and search_terms:
             doc_fields = [f for f in search_fields if f not in ["product_name", "description", "sku"]]
             if doc_fields:
-                results["documents"] = await self.search_documents(db, search_terms, doc_fields)
+                results["documents"] = await self.search_documents(db, search_terms, doc_fields, document_ids=document_ids)
 
         # For general queries or if no structured results, use semantic search
         if query_type == "general" or (not results["line_items"] and not results["documents"]):
-            results["semantic"] = await self.search_similar_chunks(db, original_query)
+            results["semantic"] = await self.search_similar_chunks(db, original_query, document_ids=document_ids)
 
         # Fallback: get recent documents if nothing found
         if not results["line_items"] and not results["documents"] and not results["semantic"]:
-            results["documents"] = await self.get_recent_documents(db, limit=10)
+            results["documents"] = await self.get_recent_documents(db, limit=10, document_ids=document_ids)
 
         return results
 
@@ -394,14 +421,15 @@ SKU: {li.get('sku', 'N/A')}""")
         self,
         db: AsyncSession,
         query: str,
-        chat_history: list[dict] = None
+        chat_history: list[dict] = None,
+        document_ids: list[str] = None
     ) -> str:
         """Smart chat with intelligent search."""
         # Step 1: Analyze query
         analysis = await self.analyze_query(query)
 
-        # Step 2: Smart search
-        search_results = await self.smart_search(db, analysis)
+        # Step 2: Smart search (filtered to specific documents if provided)
+        search_results = await self.smart_search(db, analysis, document_ids=document_ids)
 
         # Step 3: Format context
         context = self._format_search_results(search_results)
@@ -432,19 +460,21 @@ SKU: {li.get('sku', 'N/A')}""")
         self,
         db: AsyncSession,
         query: str,
-        chat_history: list[dict] = None
+        chat_history: list[dict] = None,
+        document_ids: list[str] = None
     ) -> AsyncGenerator[str, None]:
         """Stream smart chat responses for better UX."""
         total_start = time.time()
         logger.info(f"[CHAT] ========== SMART CHAT STREAM START ==========")
         logger.info(f"[CHAT] Query: {query}")
         logger.info(f"[CHAT] Model: {self.model}")
+        logger.info(f"[CHAT] Document filter: {len(document_ids) if document_ids else 'none (searching all)'}")
 
         # Step 1: Analyze query
         analysis = await self.analyze_query(query)
 
-        # Step 2: Smart search
-        search_results = await self.smart_search(db, analysis)
+        # Step 2: Smart search (filtered to specific documents if provided)
+        search_results = await self.smart_search(db, analysis, document_ids=document_ids)
 
         # Step 3: Format context
         context = self._format_search_results(search_results)
