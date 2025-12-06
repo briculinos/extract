@@ -49,6 +49,19 @@ export interface ExtractedData {
   created_at: string;
 }
 
+// Line item in an invoice (nested array element)
+export interface LineItem {
+  product_name?: string;
+  quantity?: string;
+  unit_price?: string;
+  total_price?: string;
+  vat_rate?: string;
+  vat_amount?: string;
+  sku?: string;
+  description?: string;
+  [key: string]: unknown; // Allow additional custom fields
+}
+
 export interface SearchResult {
   document_id: string;
   filename: string;

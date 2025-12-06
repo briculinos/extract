@@ -71,20 +71,34 @@ class GenericDocument(BaseModel):
     categories: Optional[list[str]] = Field(None, description="Document categories/tags")
 
 
+class LineItem(BaseModel):
+    """Individual line item in an invoice."""
+    product_name: Optional[str] = Field(None, description="Name or description of the product/service")
+    quantity: Optional[str] = Field(None, description="Quantity of items")
+    unit_price: Optional[str] = Field(None, description="Price per unit")
+    total_price: Optional[str] = Field(None, description="Total price for this line item")
+    vat_rate: Optional[str] = Field(None, description="VAT/tax rate percentage")
+    vat_amount: Optional[str] = Field(None, description="VAT/tax amount for this line item")
+    sku: Optional[str] = Field(None, description="Product SKU, article number, or code")
+    description: Optional[str] = Field(None, description="Additional description or details")
+
+
 class Invoice(BaseModel):
-    """Invoice document extraction schema for extracting key invoice data."""
+    """Invoice document extraction schema for extracting key invoice data with line items."""
+    # Header / Document-level fields
     seller: Optional[str] = Field(None, description="Name of the seller, vendor, or company issuing the invoice")
     buyer: Optional[str] = Field(None, description="Name of the buyer, customer, or recipient")
     invoice_number: Optional[str] = Field(None, description="Invoice number, reference number, or document ID")
     invoice_date: Optional[str] = Field(None, description="Date the invoice was issued")
     due_date: Optional[str] = Field(None, description="Payment due date")
-    product_name: Optional[str] = Field(None, description="Name or description of products/services")
-    quantity: Optional[str] = Field(None, description="Quantity of items or services")
-    unit_price: Optional[str] = Field(None, description="Price per unit")
+
+    # Line items - nested array of products/services
+    line_items: Optional[list[LineItem]] = Field(None, description="List of individual products or services on the invoice")
+
+    # Summary / Totals
     subtotal: Optional[str] = Field(None, description="Subtotal amount before taxes")
-    subtotal_vat: Optional[str] = Field(None, description="VAT/tax amount on subtotal")
-    total: Optional[str] = Field(None, description="Total amount including taxes")
     total_vat: Optional[str] = Field(None, description="Total VAT/tax amount")
+    total: Optional[str] = Field(None, description="Total amount including taxes")
     currency: Optional[str] = Field(None, description="Currency used (e.g., EUR, USD, SEK, GBP)")
 
 
@@ -155,7 +169,8 @@ def schema_to_template(schema_class: type[BaseModel]) -> dict:
     NuExtract expects type indicators in the template:
     - "string" or "verbatim-string" for text fields
     - "integer" for numbers
-    - ["string"] for lists
+    - ["string"] for lists of strings
+    - [{}] for lists of objects (nested models)
     - {} for dicts
     """
     template = {}
@@ -175,7 +190,21 @@ def schema_to_template(schema_class: type[BaseModel]) -> dict:
 
         # Map types to template values with NuExtract format
         if inner_type == list or (hasattr(inner_type, "__origin__") and inner_type.__origin__ == list):
-            template[field_name] = ["verbatim-string"]
+            # Check if it's a list of BaseModel (nested objects)
+            list_args = getattr(inner_type, "__args__", ())
+            if list_args and len(list_args) > 0:
+                list_item_type = list_args[0]
+                # Check if the list item is a Pydantic model
+                if hasattr(list_item_type, "model_fields"):
+                    # Recursively convert nested model
+                    template[field_name] = [schema_to_template(list_item_type)]
+                else:
+                    template[field_name] = ["verbatim-string"]
+            else:
+                template[field_name] = ["verbatim-string"]
+        elif hasattr(inner_type, "model_fields"):
+            # Single nested model (not a list)
+            template[field_name] = schema_to_template(inner_type)
         elif inner_type == dict:
             template[field_name] = {}
         elif inner_type == int:

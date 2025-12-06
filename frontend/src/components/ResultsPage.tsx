@@ -5,7 +5,8 @@ import { getDocuments, getExtractedData } from '../api/client';
 import { ExportModal } from './ExportModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { InlinePDFPreview } from './InlinePDFPreview';
-import type { ExtractedData } from '../types';
+import { ExpandableLineItems } from './ExpandableLineItems';
+import type { ExtractedData, LineItem } from '../types';
 
 export function ResultsPage() {
   const {
@@ -193,8 +194,16 @@ export function ResultsPage() {
 
   const formatValue = (value: unknown): string => {
     if (value === null || value === undefined) return '-';
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+      return `${value.length} items`;
+    }
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
+  };
+
+  // Check if a value is an array of objects (line items)
+  const isLineItemsArray = (value: unknown): value is LineItem[] => {
+    return Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null;
   };
 
   return (
@@ -337,6 +346,10 @@ export function ResultsPage() {
                                       <X size={16} />
                                     </button>
                                   </div>
+                                ) : isLineItemsArray(extracted.data[col]) ? (
+                                  <ExpandableLineItems
+                                    lineItems={extracted.data[col] as LineItem[]}
+                                  />
                                 ) : (
                                   <span
                                     className="cursor-pointer"
